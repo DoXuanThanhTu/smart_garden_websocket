@@ -55,7 +55,9 @@ app.post('/control/:deviceId', (req, res) => {
         res.status(404).json({ status: 'offline' });
     }
 });
-
+app.get('/', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+});
 // ======================== AUTO PING ========================
 if (process.env.SERVER_URL) {
     const pingSelf = async () => {
