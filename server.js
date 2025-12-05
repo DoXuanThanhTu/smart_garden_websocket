@@ -2,44 +2,70 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const WebSocket = require('ws');
-const axios = require('axios');
+const path = require('path');
 
 const app = express();
 app.use(bodyParser.json());
 
-// ======================== WEBSOCKET ========================
-const devices = {}; // { deviceId: ws }
-const wss = new WebSocket.Server({ noServer: true });
-
-wss.on('connection', (ws, request, deviceId) => {
-    console.log(`ESP32 connected: ${deviceId}`);
-    devices[deviceId] = ws;
-
-    ws.on('message', (message) => {
-        const data = JSON.parse(message);
-        console.log('Sensor data:', data);
-    });
-
-    ws.on('close', () => {
-        delete devices[deviceId];
-        console.log(`ESP32 disconnected: ${deviceId}`);
-    });
+// ======================== DASHBOARD ========================
+app.get('/', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// ======================== HTTP SERVER ========================
+// ======================== WEBSOCKET ========================
+const devices = {};       // ESP32 connections { deviceId: ws }
+const dashboardClients = new Set(); // Browser clients
+
+const wss = new WebSocket.Server({ noServer: true });
+
+wss.on('connection', (ws, request, deviceId, type) => {
+    if (type === 'esp32') {
+        console.log(`ESP32 connected: ${deviceId}`);
+        devices[deviceId] = ws;
+
+        ws.on('message', (message) => {
+            const data = JSON.parse(message);
+            console.log('Sensor data:', data);
+
+            // Broadcast dữ liệu tới dashboard
+            dashboardClients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(data));
+            });
+        });
+
+        ws.on('close', () => {
+            delete devices[deviceId];
+            console.log(`ESP32 disconnected: ${deviceId}`);
+        });
+
+    } else if (type === 'dashboard') {
+        console.log('Dashboard connected');
+        dashboardClients.add(ws);
+
+        ws.on('close', () => {
+            dashboardClients.delete(ws);
+            console.log('Dashboard disconnected');
+        });
+    }
+});
+
+// Nâng cấp HTTP → WebSocket
 const server = app.listen(process.env.PORT || 3000, () => 
     console.log(`Server running on port ${process.env.PORT || 3000}`)
 );
 
-// Nâng cấp kết nối lên WebSocket
 server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url, `http://${request.headers.host}`);
-    const deviceId = url.searchParams.get('deviceId');
-    if (!deviceId) {
+    if (url.searchParams.get('deviceId')) {
+        // ESP32
+        const deviceId = url.searchParams.get('deviceId');
+        wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request, deviceId, 'esp32'));
+    } else if (url.searchParams.get('dashboard')) {
+        // Dashboard
+        wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request, null, 'dashboard'));
+    } else {
         socket.destroy();
-        return;
     }
-    wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request, deviceId));
 });
 
 // ======================== API CONTROL ========================
@@ -55,23 +81,3 @@ app.post('/control/:deviceId', (req, res) => {
         res.status(404).json({ status: 'offline' });
     }
 });
-app.get('/', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
-});
-// ======================== AUTO PING ========================
-if (process.env.SERVER_URL) {
-    const pingSelf = async () => {
-        try {
-            await axios.get(process.env.SERVER_URL);
-            console.log('Pinged self successfully');
-        } catch (err) {
-            console.error('Ping self failed:', err.message);
-        } finally {
-            const interval = 10000 + Math.random() * 5000;
-            console.log("Next self-ping in", (interval / 1000).toFixed(2), "s");
-            setTimeout(pingSelf, interval);
-        }
-    };
-    pingSelf();
-}
-
