@@ -1,0 +1,47 @@
+# --- Node.js ---
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# --- Environment files ---
+.env
+.env.local
+.env.*.local
+
+# --- Logs ---
+logs/
+*.log
+log.txt
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Build output ---
+dist/
+build/
+tmp/
+temp/
+
+# --- Editor ---
+.vscode/
+.idea/
+
+# --- MongoDB ---
+/data/db/
+mongod.lock
+
+# --- Frontend ---
+public/uploads/
+public/cache/
+
+# --- ESP32 / Arduino ---
+*.bin
+*.elf
+*.hex
+
+# --- Misc ---
+*.swp
+*.swo
